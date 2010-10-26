@@ -423,7 +423,7 @@ class Moor {
 	 * @param string $directory_separator
 	 * @return void
 	 */
-	public static function pathTo($callback, $directory_separator=NULL)
+	public static function pathTo($callback, $directory_separator='/')
 	{
 		$string = self::expandCallback($callback);
 		return self::makePath($string, $directory_separator);
