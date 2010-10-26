@@ -1,6 +1,6 @@
 RewriteEngine On
 
-#RewriteBase /
+RewriteBase /petalon/
 
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

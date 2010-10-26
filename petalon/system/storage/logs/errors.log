@@ -1,0 +1,20 @@
+[git.cc] One or more errors or exceptions occured at 2010-10-26 17:50:41
+
+Warning
+-------
+{doc_root}\petalon\petalon\index.php(3): require('D:\AppServ\www\...')
+{doc_root}\petalon\petalon\system\init.php(34): Moor::run()
+{doc_root}\petalon\petalon\system\lib\moor\Moor.php(550): call_user_func('home')
+[internal function]
+call_user_func() expects parameter 1 to be a valid callback, function 'home' not found or invalid function name
+
+[git.cc] One or more errors or exceptions occured at 2010-10-26 17:51:16
+
+Strict
+------
+{doc_root}\petalon\petalon\index.php(3): require('D:\AppServ\www\...')
+{doc_root}\petalon\petalon\system\init.php(34): Moor::run()
+{doc_root}\petalon\petalon\system\lib\moor\Moor.php(550): call_user_func(Array)
+[internal function]
+call_user_func() expects parameter 1 to be a valid callback, non-static method Controller_Demo_Home::index() should not be called statically
+
