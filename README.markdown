@@ -2,9 +2,10 @@
 
 ## Flourish
 
-Flourish is a PHP unframework — a general-purpose, object-oriented library.
+Flourish is a PHP unframework a general-purpose, object-oriented library.
 
 [http://github.com/wbond/flourish](http://github.com/wbond/flourish)
+
 [http://flourishlib.com/](http://flourishlib.com/)
 
 ## Moor
