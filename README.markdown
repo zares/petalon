@@ -1,4 +1,4 @@
-Petalon PHP Framework based on Flourish and Moor
+## Petalon PHP Framework based on Flourish and Moor
 
 ---------------------------------
  Flourish
