@@ -9,7 +9,7 @@ fCore::enableExceptionHandling(STORAGE_PATH.'logs'.DS.'exceptions.log');
 //fCore::enableExceptionHandling('html');
 //fCore::enableExceptionHandling('html', array($templating, 'place'), array('footer'));
 
-fCore::disableContext();
+//fCore::disableContext();
 
 fSession::setPath(STORAGE_PATH.'session'.DS);
 fSession::setLength('180 minutes');
