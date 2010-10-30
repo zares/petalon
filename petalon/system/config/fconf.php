@@ -1,9 +1,6 @@
 <?php
 
-define('SUS_EMAIL', 'sezarin@land.ru');
-define('ADM_EMAIL', 'sezarin@land.ru');
-
-fTimestamp::setDefaultTimezone("Europe/Kiev");
+fTimestamp::setDefaultTimezone("America/Chicago");
 
 fCore::enableErrorHandling(STORAGE_PATH.'logs'.DS.'errors.log');
 fCore::enableExceptionHandling(STORAGE_PATH.'logs'.DS.'exceptions.log');
