@@ -5,10 +5,11 @@
  * @copyright  Copyright (c) 2010 Jeff Turcotte, others
  * @author     Jeff Turcotte [jt] <jeff.turcotte@gmail.com>
  * @author     Will Bond [wb] <will@flourishlib.com>
+ * @author     Will Bond, iMarc LLC [wb-imarc] <will@imarc.net>
  * @license    MIT (see LICENSE or bottom of this file)
  * @package    Moor
  * @link       http://github.com/jeffturcotte/moor
- * @version    1.0.0b7
+ * @version    1.0.0b8
  */
 class Moor {
 	/**
@@ -296,7 +297,7 @@ class Moor {
 		}
 		
 		foreach($excluded_params as $name => $value) {
-			$excluded_params[$name] = urlencode($value);
+			$excluded_params[$name] = $value;
 		}
 		
 		if (!empty($excluded_params)) {
@@ -417,13 +418,23 @@ class Moor {
 	}
 	
 	/**
+	 * Gets the callback for when a route is not found.
+	 *
+	 * @return callback  The callback to use for executing the not found functionality
+	 **/
+	public static function getNotFoundCallback()
+	{
+		return self::$not_found_callback;
+	}
+	
+	/**
 	 * Get the path to the supplied callback
 	 *
 	 * @param string $callback 
 	 * @param string $directory_separator
 	 * @return void
 	 */
-	public static function pathTo($callback, $directory_separator='/')
+	public static function pathTo($callback, $directory_separator=NULL)
 	{
 		$string = self::expandCallback($callback);
 		return self::makePath($string, $directory_separator);
@@ -547,8 +558,11 @@ class Moor {
 		
 		self::$messages[] = 'No Valid Matches Found. Running Not Found callback: ' . self::$not_found_callback;
 		
-		call_user_func(self::compat(self::$not_found_callback));
-		exit();
+		$route = (object) 'route';
+		$route->url      = self::parseUrl('*');
+		$route->callback = self::parseCallback(self::$not_found_callback);
+		$route->function = NULL;
+		self::dispatchRoute($route);
 	}
 	
 	/**
@@ -995,7 +1009,11 @@ class Moor {
 		
 		$string = str_replace('::', $ds, $callback_string);
 		$string = str_replace('\\', $ds, $string);
-		$string = preg_replace('/_([A-Z])/', $ds.'$1', $string);
+		$string = preg_replace(
+			'/_([A-Z])/',
+			str_replace('\\', '\\\\', $ds).'$1',
+			$string
+		);
 		
 		$pieces = explode($ds, $string);
 		foreach($pieces as $n => $piece) {
@@ -1011,7 +1029,7 @@ class Moor {
 	 * @param  string $callback_string The callback
 	 * @return object The callback object
 	 */
-	private static function &parseCallback($callback_string)
+	private static function parseCallback($callback_string)
 	{
 		$callback = (object) trim($callback_string, '\\');
 		
@@ -1066,7 +1084,7 @@ class Moor {
 	 * @param  string $url_string    The URL string (either shorthand or a regular expression)
 	 * @return object The URL object
 	 */
-	private static function &parseUrl($url_string)
+	private static function parseUrl($url_string)
 	{
 		$url = (object) $url_string;
 		$url->shorthand = trim($url_string);
@@ -1078,13 +1096,18 @@ class Moor {
 		$match_start = TRUE;
 		$match_end   = TRUE;
 		
-		if (isset($url->scalar[0]) && $url->scalar[0] == '*') {
-			$match_start = FALSE;
-			$url->shorthand = substr($url->shorthand, 1);
-		}
-		if ($url->scalar[strlen($url->scalar)-1] == '*') {
-			$match_end = FALSE;
-			$url->shorthand = substr($url->shorthand, 0, -1);
+		if ($url->scalar == '*') {
+			$url->pattern   = '.*';
+			$url->shorthand = '';
+		} else {
+			if (isset($url->scalar[0]) && $url->scalar[0] == '*') {
+				$match_start = FALSE;
+				$url->shorthand = substr($url->shorthand, 1);
+			}
+			if ($url->scalar[strlen($url->scalar)-1] == '*') {
+				$match_end = FALSE;
+				$url->shorthand = substr($url->shorthand, 0, -1);
+			}
 		}
 		
 		// parse out callback params with formatting rules
@@ -1243,8 +1266,12 @@ class MoorNotFoundException extends MoorException {}
 // = Includes =
 // ============
 
-require 'MoorAbstractController.php';
-require 'MoorActionController.php';
+if (!class_exists('MoorAbtractController', FALSE)) {
+	require 'MoorAbstractController.php';
+}
+if (!class_exists('MoorActionController', FALSE)) {
+	require 'MoorActionController.php';
+}
 
 // ===========
 // = License =
