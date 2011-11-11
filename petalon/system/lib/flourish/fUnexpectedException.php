@@ -2,15 +2,16 @@
 /**
  * An exception that should probably not be handled by the display code, fCore::enableExceptionHandler() is recommended
  * 
- * @copyright  Copyright (c) 2007-2008 Will Bond
+ * @copyright  Copyright (c) 2007-2011 Will Bond
  * @author     Will Bond [wb] <will@flourishlib.com>
  * @license    http://flourishlib.com/license
  * 
  * @package    Flourish
  * @link       http://flourishlib.com/fUnexpectedException
  * 
- * @version    1.0.0b
- * @changes    1.0.0b  The initial implementation [wb, 2007-06-14]
+ * @version    1.0.0b2
+ * @changes    1.0.0b2  Updated ::printMessage() to use an ASCII dash to prevent encoding issues when an output encoding is not specified [wb, 2011-05-09]
+ * @changes    1.0.0b   The initial implementation [wb, 2007-06-14]
  */
 class fUnexpectedException extends fException
 {
@@ -23,7 +24,7 @@ class fUnexpectedException extends fException
 	{
 		echo '<div class="exception ' . $this->getCSSClass() . '"><p>';
 		echo self::compose(
-			'It appears an error has occured — we apologize for the inconvenience. The problem may be resolved if you try again.'
+			'It appears an error has occurred - we apologize for the inconvenience. The problem may be resolved if you try again.'
 		);
 		echo '</p></div>';
 	}
@@ -32,7 +33,7 @@ class fUnexpectedException extends fException
 
 
 /**
- * Copyright (c) 2007-2008 Will Bond <will@flourishlib.com>
+ * Copyright (c) 2007-2011 Will Bond <will@flourishlib.com>
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal

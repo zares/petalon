@@ -2,7 +2,7 @@
 /**
  * Holds a single instance of the fDatabase class and provides database manipulation functionality for ORM code
  * 
- * @copyright  Copyright (c) 2007-2010 Will Bond, others
+ * @copyright  Copyright (c) 2007-2011 Will Bond, others
  * @author     Will Bond [wb] <will@flourishlib.com>
  * @author     Craig Ruksznis, iMarc LLC [cr-imarc] <craigruk@imarc.net>
  * @license    http://flourishlib.com/license
@@ -10,7 +10,12 @@
  * @package    Flourish
  * @link       http://flourishlib.com/fORMDatabase
  * 
- * @version    1.0.0b27
+ * @version    1.0.0b32
+ * @changes    1.0.0b32  Added support to ::addWhereClause() for the `^~` and `$~` operators [wb, 2011-06-20]
+ * @changes    1.0.0b31  Fixed a bug with ::addWhereClause() generating invalid SQL [wb, 2011-05-10]
+ * @changes    1.0.0b30  Fixed ::insertFromAndGroupByClauses() to insert `MAX()` around columns in related tables in the `ORDER BY` clause when a `GROUP BY` is used [wb, 2011-02-03]
+ * @changes    1.0.0b29  Added code to handle old PCRE engines that don't support unicode character properties [wb, 2010-12-06]
+ * @changes    1.0.0b28  Fixed a bug in the fProgrammerException that is thrown when an improperly formatted OR condition is provided [wb, 2010-11-24]
  * @changes    1.0.0b27  Fixed ::addWhereClause() to ignore fuzzy search clauses with no values to match [wb, 2010-10-19]
  * @changes    1.0.0b26  Fixed ::insertFromAndGroupByClauses() to handle SQL where a table is references in more than one capitalization [wb, 2010-07-26]
  * @changes    1.0.0b25  Fixed ::insertFromAndGroupByClauses() to properly handle recursive relationships [wb, 2010-07-22]
@@ -61,6 +66,13 @@ class fORMDatabase
 	 * @var array
 	 */
 	static private $database_objects = array();
+	
+	/**
+	 * If the PCRE engine supports unicode character properties
+	 * 
+	 * @var boolean
+	 */
+	static private $pcre_supports_unicode_character_properties = NULL;
 	
 	
 	/**
@@ -198,6 +210,24 @@ class fORMDatabase
 					}
 					$params[0] .= '(' . join(' OR ', $condition) . ')';
 					break;
+
+				case '^~':
+					$condition = array();
+					foreach ($values as $value) {
+						$condition[] = $escaped_column . ' LIKE %s';
+						$params[] = $value . '%';
+					}
+					$params[0] .= '(' . join(' OR ', $condition) . ')';
+					break;
+				
+				case '$~':
+					$condition = array();
+					foreach ($values as $value) {
+						$condition[] = $escaped_column . ' LIKE %s';
+						$params[] = '%' . $value;
+					}
+					$params[0] .= '(' . join(' OR ', $condition) . ')';
+					break;
 				
 				case '&~':
 					$condition = array();
@@ -290,6 +320,16 @@ class fORMDatabase
 				case '~':
 					$params[0] .= $escaped_column . ' LIKE %s';
 					$params[]   = '%' . $value . '%';
+					break;
+				
+				case '^~':
+					$params[0] .= $escaped_column . ' LIKE %s';
+					$params[]   = $value . '%';
+					break;
+				
+				case '$~':
+					$params[0] .= $escaped_column . ' LIKE %s';
+					$params[]   = '%' . $value;
 					break;
 				
 				case '!~':
@@ -504,7 +544,7 @@ class fORMDatabase
 					array('<>:' => '!:', '!=:' => '!:')
 				);
 				$column   = substr($column, 0, -3);
-			} elseif (in_array(substr($column, -2), array('<=', '>=', '!=', '<>', '!~', '&~', '><', '=:', '!:', '<:', '>:'))) {
+			} elseif (in_array(substr($column, -2), array('<=', '>=', '!=', '<>', '!~', '&~', '^~', '$~', '><', '=:', '!:', '<:', '>:'))) {
 				$operator = strtr(
 					substr($column, -2),
 					array('<>' => '!', '!=' => '!')
@@ -545,7 +585,7 @@ class fORMDatabase
 							array('<>:' => '!:', '!=:' => '!:')
 						);
 						$_column     = substr($_column, 0, -3);
-					} elseif (in_array(substr($_column, -2), array('<=', '>=', '!=', '<>', '!~', '&~', '=:', '!:', '<:', '>:'))) {
+					} elseif (in_array(substr($_column, -2), array('<=', '>=', '!=', '<>', '!~', '&~', '^~', '$~', '=:', '!:', '<:', '>:'))) {
 						$operators[] = strtr(
 							substr($_column, -2),
 							array('<>' => '!', '!=' => '!')
@@ -581,6 +621,7 @@ class fORMDatabase
 						// Skip fuzzy matches with no values to match
 						if ($values === array()) {
 							$params[0] .= ' 1 = 1 ';
+							$i++;
 							continue;
 						}
 						
@@ -646,7 +687,7 @@ class fORMDatabase
 				} else {
 					if (sizeof($columns) != sizeof($values)) {
 						throw new fProgrammerException(
-							'When creating an %1$s where clause there must be an equal number of columns and values, however there are not',
+							'When creating an %1$s where clause there must be an equal number of columns and values, however %2$s column(s) and %3$s value(s) were provided',
 							'OR',
 							sizeof($columns),
 							sizeof($values)
@@ -922,6 +963,7 @@ class fORMDatabase
 	 */
 	static public function injectFromAndGroupByClauses($db, $schema, $params, $table)
 	{
+		$table_with_schema = $table;
 		$table = self::cleanTableName($schema, $table);
 		$joins = array();
 		
@@ -1043,7 +1085,6 @@ class fORMDatabase
 				break;
 			}
 		}
-		$found_order_by = FALSE;
 		
 		$from_clause     = self::createFromClauseFromJoins($db, $joins);
 		
@@ -1065,7 +1106,7 @@ class fORMDatabase
 		// Put the SQL back together
 		$new_sql = '';
 		
-		$preg_table_pattern = preg_quote($table, '#') . '\.|' . preg_quote('"' . $table . '"', '#') . '\.';
+		$preg_table_pattern = preg_quote($table_with_schema, '#') . '\.|' . preg_quote('"' . trim($table_with_schema, '"') . '"', '#') . '\.';
 		foreach ($matches[0] as $match) {
 			$temp_sql = $match;
 			
@@ -1078,16 +1119,12 @@ class fORMDatabase
 					$temp_sql = preg_replace('#(?<![\w"])' . preg_quote($arrow_table, '#') . '(?!=[\w"])#', $alias, $temp_sql);
 				}
 				
-				// In the ORDER BY clause we need to wrap columns in
-				if ($found_order_by && $joined_to_many) {
-					$temp_sql = preg_replace('#(?<!avg\(|count\(|max\(|min\(|sum\(|cast\(|case |when |"|avg\("|count\("|max\("|min\("|sum\("|cast\("|case "|when "|\{)\b((?!' . $preg_table_pattern . ')("?\w+"?\.)?"?\w+"?\."?\w+"?)(?![^\w."])#i', 'max(\1)', $temp_sql);
-				}
-				
+				// This automatically adds max() around column from other tables when a group by is used
 				if ($joined_to_many && preg_match('#order\s+by#i', $temp_sql)) {
 					$order_by_found = TRUE;
 					
 					$parts = preg_split('#(order\s+by)#i', $temp_sql, -1, PREG_SPLIT_DELIM_CAPTURE);
-					$parts[2] = $temp_sql = preg_replace('#(?<!avg\(|count\(|max\(|min\(|sum\(|cast\(|case |when |"|avg\("|count\("|max\("|min\("|sum\("|cast\("|case "|when "|\{)\b((?!' . $preg_table_pattern . ')("?\w+"?\.)?"?\w+"?\."?\w+"?)(?![^\w."])#i', 'max(\1)', $parts[2]);
+					$parts[2] = preg_replace('#(?<!avg\(|count\(|max\(|min\(|sum\(|cast\(|case |when |"|avg\("|count\("|max\("|min\("|sum\("|cast\("|case "|when "|\{|\.)((?!' . $preg_table_pattern . ')((?:"|\b)\w+"?\.)?(?:"|\b)\w+"?\."?\w+"?)(?![\w."])#i', 'max(\1)', $parts[2]);
 					
 					$temp_sql = join('', $parts);
 				}
@@ -1169,7 +1206,17 @@ class fORMDatabase
 			
 			// Trim any punctuation off of the beginning and end of terms
 			} else {
-				$match = preg_replace('#(^[\pC\pC\pM\pP\pS\pZ]+|[\pC\pC\pM\pP\pS\pZ]+$)#iDu', '', $match);	
+				if (self::$pcre_supports_unicode_character_properties === NULL) {
+					fCore::startErrorCapture();
+					preg_match('#\pC#u', 'test');
+					self::$pcre_supports_unicode_character_properties = !((boolean) fCore::stopErrorCapture());
+				}
+				if (self::$pcre_supports_unicode_character_properties) {
+					$match = preg_replace('#(^[\pC\pC\pM\pP\pS\pZ]+|[\pC\pC\pM\pP\pS\pZ]+$)#iDu', '', $match);
+				} else {
+					// This just removes ascii non-alphanumeric characters, plus the unicode punctuation and supplemental punctuation blocks
+					$match = preg_replace('#(^[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7F\x{2000}-\x{206F}\x{2E00}-\x{2E7F}\x{00A1}-\x{00A9}\x{00AB}-\x{00B1}\x{00B4}\x{00B6}-\x{00B8}\x{00BB}\x{00BF}\x{00D7}\x{00F7}]+|[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7F\x{2000}-\x{206F}\x{2E00}-\x{2E7F}\x{00A1}-\x{00A9}\x{00AB}-\x{00B1}\x{00B4}\x{00B6}-\x{00B8}\x{00BB}\x{00BF}\x{00D7}\x{00F7}]+$)#iDu', '', $match);
+				}
 			}
 			
 			if ($ignore_stop_words && in_array(strtolower($match), $stop_words)) {
@@ -1288,7 +1335,7 @@ class fORMDatabase
 
 
 /**
- * Copyright (c) 2007-2010 Will Bond <will@flourishlib.com>, others
+ * Copyright (c) 2007-2011 Will Bond <will@flourishlib.com>, others
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal

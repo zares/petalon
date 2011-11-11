@@ -2,14 +2,17 @@
 /**
  * Provides cryptography functionality, including hashing, symmetric-key encryption and public-key encryption
  * 
- * @copyright  Copyright (c) 2007-2010 Will Bond
+ * @copyright  Copyright (c) 2007-2011 Will Bond
  * @author     Will Bond [wb] <will@flourishlib.com>
  * @license    http://flourishlib.com/license
  * 
  * @package    Flourish
  * @link       http://flourishlib.com/fCryptography
  * 
- * @version    1.0.0b11
+ * @version    1.0.0b14
+ * @changes    1.0.0b14  Added the `base36`, `base56` and custom types to ::randomString() [wb, 2011-08-25]
+ * @changes    1.0.0b13  Updated documentation about symmetric-key encryption to explicitly state block and key sizes, added base64 type to ::randomString() [wb, 2010-11-06]
+ * @changes    1.0.0b12  Fixed an inline comment that incorrectly references AES-256 [wb, 2010-11-04]
  * @changes    1.0.0b11  Updated class to use fCore::startErrorCapture() instead of `error_reporting()` [wb, 2010-08-09]
  * @changes    1.0.0b10  Added a missing parameter to an fProgrammerException in ::randomString() [wb, 2010-07-29]
  * @changes    1.0.0b9   Added ::hashHMAC() [wb, 2010-04-20]
@@ -363,7 +366,7 @@ class fCryptography
 	 * Returns a random string of the type and length specified
 	 * 
 	 * @param  integer $length  The length of string to return
-	 * @param  string  $type    The type of string to return: `'alphanumeric'`, `'alpha'`, `'numeric'`, or `'hexadecimal'`
+	 * @param  string  $type    The type of string to return: `'base64'`, `'base56'`, `'base36'`, `'alphanumeric'`, `'alpha'`, `'numeric'`, or `'hexadecimal'`, if a different string is provided, it will be used for the alphabet
 	 * @return string  A random string of the type and length specified
 	 */
 	static public function randomString($length, $type='alphanumeric')
@@ -377,28 +380,36 @@ class fCryptography
 		}
 		
 		switch ($type) {
+			case 'base64':
+				$alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/';
+				break;
+				
 			case 'alphanumeric':
 				$alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+				break;
+
+			case 'base56':
+				$alphabet = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 				break;
 				
 			case 'alpha':
 				$alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+				break;
+			
+			case 'base36':
+				$alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+				break;
+
+			case 'hexadecimal':
+				$alphabet = 'abcdef0123456789';
 				break;
 				
 			case 'numeric':
 				$alphabet = '0123456789';
 				break;
 				
-			case 'hexadecimal':
-				$alphabet = 'abcdef0123456789';
-				break;
-				
 			default:
-				throw new fProgrammerException(
-					'The type specified, %1$s, is invalid. Must be one of: %2$s.',
-					$type,
-					join(', ', array('alphanumeric', 'alpha', 'numeric', 'hexadecimal'))
-				);
+				$alphabet = $type;
 		}
 		
 		$alphabet_length = strlen($alphabet);
@@ -499,7 +510,7 @@ class fCryptography
 			);
 		}
 		
-		// Set up the main encryption, we are gonna use AES-256 (also know as rijndael-256) in cipher feedback mode
+		// This code uses the Rijndael cipher with a 192 bit block size and a 256 bit key in cipher feedback mode
 		$module   = mcrypt_module_open('rijndael-192', '', 'cfb', '');
 		$key      = substr(sha1($secret_key), 0, mcrypt_enc_get_key_size($module));
 		mcrypt_generic_init($module, $key, $iv);
@@ -538,9 +549,10 @@ class fCryptography
 		
 		self::verifySymmetricKeyEnvironment();
 		
-		// Set up the main encryption, we are gonna use AES-192 (also know as rijndael-192)
-		// in cipher feedback mode. Cipher feedback mode is chosen because no extra padding
-		// is added, ensuring we always get the exact same plaintext out of the decrypt method
+		// This code uses the Rijndael cipher with a 192 bit block size and a
+		// 256 bit key in cipher feedback mode. Cipher feedback mode is chosen
+		// because no extra padding is added, ensuring we always get the exact
+		// same plaintext out of the decrypt method
 		$module   = mcrypt_module_open('rijndael-192', '', 'cfb', '');
 		$key      = substr(sha1($secret_key), 0, mcrypt_enc_get_key_size($module));
 		srand();
@@ -626,7 +638,7 @@ class fCryptography
 
 
 /**
- * Copyright (c) 2007-2010 Will Bond <will@flourishlib.com>
+ * Copyright (c) 2007-2011 Will Bond <will@flourishlib.com>
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal

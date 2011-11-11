@@ -2,14 +2,20 @@
 /**
  * A lightweight, iterable set of fActiveRecord-based objects
  * 
- * @copyright  Copyright (c) 2007-2010 Will Bond
+ * @copyright  Copyright (c) 2007-2011 Will Bond
  * @author     Will Bond [wb] <will@flourishlib.com>
  * @license    http://flourishlib.com/license
  * 
  * @package    Flourish
  * @link       http://flourishlib.com/fRecordSet
  * 
- * @version    1.0.0b40  Added the ::tally() method [wb, 2010-09-28]
+ * @version    1.0.0b45
+ * @changes    1.0.0b45  Added support for the starts with like, `^~`, and ends with like, `$~`, operators to both ::build() and ::filter() [wb, 2011-06-20]
+ * @changes    1.0.0b44  Backwards Compatibility Break - ::sort() and ::sortByCallback() now return a new fRecordSet instead of sorting the record set in place [wb, 2011-06-20]
+ * @changes    1.0.0b43  Added the ability to pass SQL and values to ::buildFromSQL(), added the ability to manually pass the `$limit` and `$page` to ::buildFromArray() and ::buildFromSQL(), changed ::slice() to remember `$limit` and `$page` if possible when `$remember_original_count` is `TRUE` [wb, 2011-01-11]
+ * @changes    1.0.0b42  Updated class to use fORM::getRelatedClass() [wb, 2010-11-24]
+ * @changes    1.0.0b41  Added support for PHP 5.3 namespaced fActiveRecord classes [wb, 2010-11-11]
+ * @changes    1.0.0b40  Added the ::tally() method [wb, 2010-09-28]
  * @changes    1.0.0b39  Backwards Compatibility Break - removed the methods ::fetchRecord(), ::current(), ::key(), ::next(), ::rewind() and ::valid() and the Iterator interface - and the `$pointer` parameter for callbacks registered via fORM::registerRecordSetMethod() was replaced with the `$method_name` parameter - added the methods ::getIterator(), ::getLimit(), ::getPage(), ::getPages(), ::getRecord(), ::offsetExists(), ::offsetGet(), ::offsetSet() and ::offsetUnset() and the IteratorAggregate and ArrayAccess interfaces [wb, 2010-09-28]
  * @changes    1.0.0b38  Updated code to work with the new fORM API [wb, 2010-08-06]
  * @changes    1.0.0b37  Fixed a typo/bug in ::reduce() [wb, 2010-06-30]
@@ -70,6 +76,8 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 	 * 'column!='                   => VALUE                        // column <> VALUE
 	 * 'column<>'                   => VALUE                        // column <> VALUE
 	 * 'column~'                    => VALUE                        // column LIKE '%VALUE%'
+	 * 'column^~'                   => VALUE                        // column LIKE 'VALUE%'
+	 * 'column$~'                   => VALUE                        // column LIKE '%VALUE'
 	 * 'column!~'                   => VALUE                        // column NOT LIKE '%VALUE%'
 	 * 'column<'                    => VALUE                        // column < VALUE
 	 * 'column<='                   => VALUE                        // column <= VALUE
@@ -88,6 +96,8 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 	 * 'column!='                   => array(VALUE, VALUE2, ... )   // column NOT IN (VALUE, VALUE2, ... )
 	 * 'column<>'                   => array(VALUE, VALUE2, ... )   // column NOT IN (VALUE, VALUE2, ... )
 	 * 'column~'                    => array(VALUE, VALUE2, ... )   // (column LIKE '%VALUE%' OR column LIKE '%VALUE2%' OR column ... )
+	 * 'column^~'                   => array(VALUE, VALUE2, ... )   // (column LIKE 'VALUE%' OR column LIKE 'VALUE2%' OR column ... )
+	 * 'column$~'                   => array(VALUE, VALUE2, ... )   // (column LIKE '%VALUE' OR column LIKE '%VALUE2' OR column ... )
 	 * 'column&~'                   => array(VALUE, VALUE2, ... )   // (column LIKE '%VALUE%' AND column LIKE '%VALUE2%' AND column ... )
 	 * 'column!~'                   => array(VALUE, VALUE2, ... )   // (column NOT LIKE '%VALUE%' AND column NOT LIKE '%VALUE2%' AND column ... )
 	 * 'column!|column2<|column3='  => array(VALUE, VALUE2, VALUE3) // (column <> '%VALUE%' OR column2 < '%VALUE2%' OR column3 = '%VALUE3%')
@@ -139,6 +149,8 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 	 * 'function(column)!=   => VALUE                        // function(column) <> VALUE
 	 * 'function(column)<>'  => VALUE                        // function(column) <> VALUE
 	 * 'function(column)~'   => VALUE                        // function(column) LIKE '%VALUE%'
+	 * 'function(column)^~'  => VALUE                        // function(column) LIKE 'VALUE%'
+	 * 'function(column)$~'  => VALUE                        // function(column) LIKE '%VALUE'
 	 * 'function(column)!~'  => VALUE                        // function(column) NOT LIKE '%VALUE%'
 	 * 'function(column)<'   => VALUE                        // function(column) < VALUE
 	 * 'function(column)<='  => VALUE                        // function(column) <= VALUE
@@ -269,11 +281,14 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 	 * 
 	 * @internal
 	 * 
-	 * @param  string|array $class    The class or classes of the records
-	 * @param  array        $records  The records to create the set from, the order of the record set will be the same as the order of the array.
+	 * @param  string|array $class          The class or classes of the records
+	 * @param  array        $records        The records to create the set from, the order of the record set will be the same as the order of the array.
+	 * @param  integer      $total_records  The total number of records - this should only be provided if the array is a segment of a larger array - this is informational only and does not affect the array
+	 * @param  integer      $limit          The maximum number of records the array was limited to - this is informational only and does not affect the array
+	 * @param  integer      $page           The page of records the array is from - this is informational only and does not affect the array
 	 * @return fRecordSet  A set of fActiveRecord objects
 	 */
-	static public function buildFromArray($class, $records)
+	static public function buildFromArray($class, $records, $total_records=NULL, $limit=NULL, $page=1)
 	{
 		if (is_array($class)) {
 			foreach ($class as $_class) {
@@ -289,7 +304,7 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 			throw new fProgrammerException('The records specified are not in an array');	
 		}
 		
-		return new fRecordSet($class, $records);
+		return new fRecordSet($class, $records, $total_records, $limit, $page);
 	}
 	
 	
@@ -330,17 +345,34 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 	 * The `$non_limited_count_sql` is used when ::count() is called with `TRUE`
 	 * passed as the parameter.
 	 * 
-	 * @param  string $class                  The class to create the fRecordSet of
-	 * @param  string $sql                    The SQL to create the set from
-	 * @param  string $non_limited_count_sql  An SQL statement to get the total number of rows that would have been returned if a `LIMIT` clause had not been used. Should only be passed if a `LIMIT` clause is used.
+	 * Both the `$sql` and `$non_limited_count_sql` can be passed as a string
+	 * SQL statement, or an array containing a SQL statement and the values to
+	 * escape into it:
+	 * 
+	 * {{{
+	 * #!php
+	 * fRecordSet::buildFromSQL(
+	 *     'User',
+	 *     array("SELECT * FROM users WHERE date_created > %d LIMIT %i OFFSET %i", $start_date, 10, 10*($page-1)),
+	 *     array("SELECT * FROM users WHERE date_created > %d", $start_date),
+	 *     10,
+	 *     $page
+	 * )
+	 * }}}
+	 * 
+	 * @param  string        $class                  The class to create the fRecordSet of
+	 * @param  string|array  $sql                    The SQL to create the set from, or an array of the SQL statement plus values to escape
+	 * @param  string|array  $non_limited_count_sql  An SQL statement, or an array of the SQL statement plus values to escape, to get the total number of rows that would have been returned if a `LIMIT` clause had not been used. Should only be passed if a `LIMIT` clause is used in `$sql`.
+	 * @param  integer       $limit                  The number of records the SQL statement was limited to - this is information only and does not affect the SQL
+	 * @param  integer       $page                   The page of records the SQL statement returned - this is information only and does not affect the SQL    
 	 * @return fRecordSet  A set of fActiveRecord objects
 	 */
-	static public function buildFromSQL($class, $sql, $non_limited_count_sql=NULL)
+	static public function buildFromSQL($class, $sql, $non_limited_count_sql=NULL, $limit=NULL, $page=1)
 	{
 		fActiveRecord::validateClass($class);
 		fActiveRecord::forceConfigure($class);
 		
-		if (!preg_match('#^\s*SELECT\s*(DISTINCT|ALL)?\s*(("?\w+"?\.)?"?\w+"?\.)?\*\s*FROM#i', $sql)) {
+		if (!preg_match('#^\s*SELECT\s*(DISTINCT|ALL)?\s*(("?\w+"?\.)?"?\w+"?\.)?\*\s*FROM#i', is_array($sql) ? $sql[0] : $sql)) {
 			throw new fProgrammerException(
 				'The SQL statement specified, %s, does not appear to be in the form SELECT * FROM table',
 				$sql
@@ -349,10 +381,22 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 		
 		$db = fORMDatabase::retrieve($class, 'read');
 		
+		if (is_array($sql)) {
+			$result = call_user_func_array($db->translatedQuery, $sql);;
+		} else {
+			$result = $db->translatedQuery($sql);
+		}
+		
+		if (is_array($non_limited_count_sql)) {
+			$non_limited_count_sql = call_user_func_array($db->escape, $non_limited_count_sql);
+		}
+		
 		return new fRecordSet(
 			$class,
-			$db->translatedQuery($sql),
-			$non_limited_count_sql
+			$result,
+			$non_limited_count_sql,
+			$limit,
+			$page
 		);
 	}
 	
@@ -506,16 +550,20 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 		// This check prevents fGrammar exceptions being thrown when an unknown method is called
 		if (in_array($action, array('build', 'prebuild', 'precount', 'precreate'))) {
 			$related_class = fGrammar::singularize($subject);
+			$related_class_sans_namespace = $related_class;
+			if (!is_array($this->class)) {
+				$related_class = fORM::getRelatedClass($this->class, $related_class);
+			}
 		}
 		 
 		switch ($action) {
 			case 'build':
 				if ($route) {
 					$this->precreate($related_class, $route);
-					return $this->buildFromCall('create' . $related_class, $route);
+					return $this->buildFromCall('create' . $related_class_sans_namespace, $route);
 				}
 				$this->precreate($related_class);
-				return $this->buildFromCall('create' . $related_class);
+				return $this->buildFromCall('create' . $related_class_sans_namespace);
 			
 			case 'prebuild':
 				return $this->prebuild($related_class, $route);
@@ -970,6 +1018,8 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 	 * 'methodName>'                           => $value  // If the output is greater than $value
 	 * 'methodName>='                          => $value  // If the output is greater than or equal to $value
 	 * 'methodName~'                           => $value  // If the output contains the $value (case insensitive)
+	 * 'methodName^~'                          => $value  // If the output starts with the $value (case insensitive)
+	 * 'methodName$~'                          => $value  // If the output ends with the $value (case insensitive)
 	 * 'methodName!~'                          => $value  // If the output does not contain the $value (case insensitive)
 	 * 'methodName|methodName2|methodName3~'   => $value  // Parses $value as a search string and make sure each term is present in at least one output (case insensitive)
 	 * 
@@ -979,6 +1029,8 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 	 * 'methodName!='                          => $array  // If the output is not equal to any value in $array
 	 * 'methodName<>'                          => $array  // If the output is not equal to any value in $array
 	 * 'methodName~'                           => $array  // If the output contains one of the strings in $array (case insensitive)
+	 * 'methodName^~'                          => $array  // If the output starts with one of the strings in $array (case insensitive)
+	 * 'methodName$~'                          => $array  // If the output ends with one of the strings in $array (case insensitive)
 	 * 'methodName!~'                          => $array  // If the output contains none of the strings in $array (case insensitive)
 	 * 'methodName&~'                          => $array  // If the output contains all of the strings in $array (case insensitive)
 	 * 'methodName|methodName2|methodName3~'   => $array  // If each value in the array is present in the output of at least one method (case insensitive)
@@ -1723,10 +1775,20 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 			}
 		}
 		
+		$limit = NULL;
+		$page  = 1;
+		
+		if ($remember_original_count && $length !== NULL && $offset % $length == 0) {
+			$limit = $length;
+			$page  = ($offset / $length) + 1;
+		}
+		
 		return new fRecordSet(
 			$this->class,
 			array_slice($this->records, $offset, $length),
-			$remember_original_count ? $this->count() : NULL
+			$remember_original_count ? $this->count() : NULL,
+			$limit,
+			$page
 		);
 	}
 	
@@ -1738,7 +1800,7 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 	 * 
 	 * @param  string $method     The method to call on each object to get the value to sort by
 	 * @param  string $direction  Either `'asc'` or `'desc'`
-	 * @return fRecordSet  The record set object, to allow for method chaining
+	 * @return fRecordSet  A new record set object, with the records sorted as requested
 	 */
 	public function sort($method, $direction)
 	{
@@ -1753,11 +1815,11 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 		
 		$this->sort_method    = $method;
 		$this->sort_direction = $direction;
-		$this->sortByCallback(array($this, 'sortCallback'));
+		$set = $this->sortByCallback(array($this, 'sortCallback'));
 		unset($this->sort_method);
 		unset($this->sort_direction);
 		
-		return $this;
+		return $set;
 	}
 	
 	
@@ -1781,13 +1843,20 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 	 * Sorts the set by passing the callback to [http://php.net/usort `usort()`] and rewinds the interator
 	 * 
 	 * @param  mixed $callback  The function/method to pass to `usort()`
-	 * @return fRecordSet  The record set object, to allow for method chaining 
+	 * @return fRecordSet  A new record set object, with the records sorted as requested
 	 */
 	public function sortByCallback($callback)
 	{
-		usort($this->records, $callback);
+		$records = $this->records;
+		usort($records, $callback);
 		
-		return $this;
+		return new self(
+			$this->class,
+			$records,
+			$this->non_limited_count,
+			$this->limit,
+			$this->page
+		);
 	}
 	
 	
@@ -1899,7 +1968,7 @@ class fRecordSet implements IteratorAggregate, ArrayAccess, Countable
 
 
 /**
- * Copyright (c) 2007-2010 Will Bond <will@flourishlib.com>
+ * Copyright (c) 2007-2011 Will Bond <will@flourishlib.com>
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal

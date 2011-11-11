@@ -16,7 +16,6 @@ define('VIEW_PATH', SYS_PATH.DS.'view'.DS);
 define('LIB_PATH', SYS_PATH.DS.'lib'.DS);
 
 include LIB_PATH .'moor'.DS.'Moor'.EXT;
-include LIB_PATH .'Constructor'.EXT;
 include LIB_PATH .'Autoloader'.EXT;
 include CONFIG_PATH .'fconf'.EXT;
 

@@ -2,7 +2,7 @@
 /**
  * Allows for quick and flexible HTML templating
  * 
- * @copyright  Copyright (c) 2007-2010 Will Bond, others
+ * @copyright  Copyright (c) 2007-2011 Will Bond, others
  * @author     Will Bond [wb] <will@flourishlib.com>
  * @author     Matt Nowack [mn] <mdnowack@gmail.com>
  * @license    http://flourishlib.com/license
@@ -10,7 +10,12 @@
  * @package    Flourish
  * @link       http://flourishlib.com/fTemplating
  * 
- * @version    1.0.0b18
+ * @version    1.0.0b23
+ * @changes    1.0.0b23  Added a default `$name` for ::retrieve() to mirror ::attach() [wb, 2011-08-31]
+ * @changes    1.0.0b22  Backwards Compatibility Break - removed the static method ::create(), added the static method ::attach() to fill its place [wb, 2011-08-31]
+ * @changes    1.0.0b21  Fixed a bug in ::enableMinification() where the minification cache directory was sometimes not properly converted to a web path [wb, 2011-08-31]
+ * @changes    1.0.0b20  Fixed a bug in CSS minification that would reduce multiple zeros that are part of a hex color code, fixed minification of `+ ++` and similar constructs in JS [wb, 2011-08-31]
+ * @changes    1.0.0b19  Corrected a bug in ::enablePHPShortTags() that would prevent proper translation inside of HTML tag attributes [wb, 2011-01-09]
  * @changes    1.0.0b18  Fixed a bug with CSS minification and black hex codes [wb, 2010-10-10]
  * @changes    1.0.0b17  Backwards Compatibility Break - ::delete() now returns the values of the element or elements that were deleted instead of returning the fTemplating instance [wb, 2010-09-19]
  * @changes    1.0.0b16  Fixed another bug with minifying JS regex literals [wb, 2010-09-13]
@@ -32,7 +37,7 @@
  */
 class fTemplating
 {
-	const create   = 'fTemplating::create';
+	const attach   = 'fTemplating::attach';
 	const reset    = 'fTemplating::reset';
 	const retrieve = 'fTemplating::retrieve';
 	
@@ -46,16 +51,15 @@ class fTemplating
 	
 	
 	/**
-	 * Creates a named template that can be accessed from any scope via ::retrieve()
+	 * Attaches a named template that can be accessed from any scope via ::retrieve()
 	 * 
-	 * @param  string $name  The name for this template instance
-	 * @param  string $root  The filesystem path to use when accessing relative files, defaults to `$_SERVER['DOCUMENT_ROOT']`
-	 * @return fTemplating  The new fTemplating instance
+	 * @param  fTemplating $templating  The fTemplating object to attach
+	 * @param  string      $name        The name for this templating instance
+	 * @return void
 	 */
-	static public function create($name, $root=NULL)
+	static public function attach($templating, $name='default')
 	{
-		self::$instances[$name] = new self($root);
-		return self::$instances[$name];
+		self::$instances[$name] = $templating;
 	}
 	
 	
@@ -78,11 +82,11 @@ class fTemplating
 	 * @param  string $name  The name of the template to retrieve
 	 * @return fTemplating  The specified fTemplating instance
 	 */
-	static public function retrieve($name)
+	static public function retrieve($name='default')
 	{
 		if (!isset(self::$instances[$name])) {
 			throw new fProgrammerException(
-				'The named template specified, %s, has not been created yet',
+				'The named template specified, %s, has not been attached yet',
 				$name
 			);
 		}
@@ -424,7 +428,7 @@ class fTemplating
 			);
 		}
 		
-		$cache_directory = $cache_directory instanceof fDirectory ? $cache_directory->getPath() : $cache_directory;
+		$cache_directory = $cache_directory instanceof fDirectory ? $cache_directory->getPath() : realpath($cache_directory);
 		if (!is_writable($cache_directory)) {
 			throw new fEnvironmentException(
 				'The cache directory specified, %s, is not writable',
@@ -573,7 +577,7 @@ class fTemplating
 			}
 			
 			$real_value = realpath($value);
-			$cache_path = $this->short_tag_directory . sha1($real_value);
+			$cache_path = $this->short_tag_directory . sha1($real_value) . '.php';
 			
 			$fixed_paths[] = $cache_path;
 			if (file_exists($cache_path) && ($this->short_tag_mode == 'production' || filemtime($cache_path) >= filemtime($real_value))) {
@@ -582,9 +586,16 @@ class fTemplating
 			
 			$code = file_get_contents($real_value);
 			$output = '';
-
+			
+			$in_php = FALSE;
+			
 			do {
-				if (!preg_match('#/\*|//|\\#|\'|"|<<<[a-z_]\w*|<<<\'[a-z_]\w*\'#i', $code, $match)) {
+				if (!$in_php) {
+					$token_regex = '<\?';
+				} else {
+					$token_regex .= '/\*|//|\\#|\'|"|<<<[a-z_]\w*|<<<\'[a-z_]\w*\'|\?>';
+				}
+				if (!preg_match('#' . $token_regex . '#i', $code, $match)) {
 					$part  = $code;
 					$code  = '';
 					$token = NULL;
@@ -600,7 +611,14 @@ class fTemplating
 				}
 				
 				$regex = NULL;
-				if ($token == "//") {
+				if ($token == "<?") {
+					$output .= $part;
+					$in_php = TRUE;
+					continue;
+				} elseif ($token == "?>") {
+					$regex = NULL;
+					$in_php = FALSE;
+				} elseif ($token == "//") {
 					$regex = '#^//.*(\n|$)#D';
 				} elseif ($token == "#") {
 					$regex = '@^#.*(\n|$)@D';
@@ -915,11 +933,15 @@ class fTemplating
 			$part = preg_replace('#[\n\r]+#', "\n", $part);
 			
 			// Whitespace is removed where not needed
-			$part = preg_replace('#(?<![a-z0-9\x80-\xFF\\\\$_])[ ]+#i', '', $part);
-			$part = preg_replace('#[ ]+(?![a-z0-9\x80-\xFF\\\\$_])#i', '', $part);
+			$part = preg_replace('#(?<![a-z0-9\x80-\xFF\\\\$_+\-])[ ]+#i', '', $part);
+			$part = preg_replace('#[ ]+(?![a-z0-9\x80-\xFF\\\\$_+\-])#i', '', $part);
 			
 			$part = preg_replace('#(?<![a-z0-9\x80-\xFF\\\\$_}\\])"\'+-])\n+#i', '', $part);
 			$part = preg_replace('#\n+(?![a-z0-9\x80-\xFF\\\\$_{[(+-])#i', '', $part);
+
+			// Remove spaces around + and - unless they are followed by a plus or minus
+			$part = preg_replace('#(?<=[+-])[ ]+(?![+\-])#i', '', $part);
+			$part = preg_replace('#(?<![+-])[ ]+(?=[+\-])#i', '', $part);
 					
 		} elseif ($type == 'css') {
 			
@@ -956,7 +978,7 @@ class fTemplating
 					$chunk = str_replace(';}', '}', $chunk);
 					
 					// All zero units are reduces to just 0
-					$chunk = preg_replace('#((?<!\d|\.|\#)0+(\.0+)?|(?<!\d)\.0+)(?=\D|$)((%|in|cm|mm|em|ex|pt|pc|px)(\b|$))?#iD', '0', $chunk);
+					$chunk = preg_replace('#((?<!\d|\.|\#|\w)0+(\.0+)?|(?<!\d)\.0+)(?=\D|$)((%|in|cm|mm|em|ex|pt|pc|px)(\b|$))?#iD', '0', $chunk);
 					
 					// All .0 decimals are removed
 					$chunk = preg_replace('#(\d+)\.0+(?=\D)#iD', '\1', $chunk);
@@ -1475,7 +1497,7 @@ class fTemplating
 
 
 /**
- * Copyright (c) 2007-2010 Will Bond <will@flourishlib.com>, others
+ * Copyright (c) 2007-2011 Will Bond <will@flourishlib.com>, others
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
